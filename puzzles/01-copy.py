@@ -105,6 +105,8 @@ def tl_copy_1d_multi_threads(A):
     B = T.empty((N,), T.float16)
 
     # TODO: Implement this function
+    with T.Kernel(1, threads=256) as _:
+        T.copy(A, B)
 
     return B
 
