@@ -58,6 +58,17 @@ def tl_outer_add(A, B, BLOCK_N: int, BLOCK_M: int):
     C = T.empty((N, M), dtype)
 
     # TODO: Implement this function
+    with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M, BLOCK_M), threads=128) as (bx, by):
+        a_idx = bx * BLOCK_N
+        b_idx = by * BLOCK_M
+        A_local = T.alloc_fragment((BLOCK_N,), dtype)
+        B_local = T.alloc_fragment((BLOCK_M,), dtype)
+        C_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        T.copy(A[a_idx], A_local)
+        T.copy(B[b_idx], B_local)
+        for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+            C_local[i, j] = A_local[i] + B_local[j]
+        T.copy(C_local, C[a_idx, b_idx])
 
     return C
 
