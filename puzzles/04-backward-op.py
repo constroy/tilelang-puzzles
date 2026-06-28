@@ -55,6 +55,19 @@ def tl_mul_relu_bcast(A, B, BLOCK_N: int, BLOCK_M: int):
     C = T.empty((N, M), dtype)
 
     # TODO: Implement this function
+    with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M, BLOCK_M), threads=256) as (bx, by):
+        A_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        B_local = T.alloc_fragment((BLOCK_M,), dtype)
+        C_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        x = bx * BLOCK_N
+        y = by * BLOCK_M
+        T.copy(A[x:x + BLOCK_N, y:y + BLOCK_M], A_local)
+        T.copy(B[y:y + BLOCK_M], B_local)
+        for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+            c = A_local[i, j] * B_local[j]
+            c = T.if_then_else(c > 0, c, 0)
+            C_local[i, j] = c
+        T.copy(C_local, C[x:x + BLOCK_N, y:y + BLOCK_M])
 
     return C
 
@@ -129,7 +142,21 @@ def tl_mul_relu_bwd(A, B, dC, BLOCK_N: int, BLOCK_M: int):
     dA = T.empty((N, M), dtype)
 
     # TODO: Implement this function
-
+    with T.Kernel(T.ceildiv(N, BLOCK_N), T.ceildiv(M, BLOCK_M), threads=256) as (bx, by):
+        A_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        B_local = T.alloc_fragment((BLOCK_M,), dtype)
+        dC_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        dA_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        x = bx * BLOCK_N
+        y = by * BLOCK_M
+        T.copy(A[x:x + BLOCK_N, y:y + BLOCK_M], A_local)
+        T.copy(B[y:y + BLOCK_M], B_local)
+        T.copy(dC[x:x + BLOCK_N, y:y + BLOCK_M], dC_local)
+        for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+            c = A_local[i, j] * B_local[j]
+            dr = dC_local[i, j] * B_local[j]
+            dA_local[i, j] = T.if_then_else(c > 0, dr, 0)
+        T.copy(dA_local, dA[x:x + BLOCK_N, y:y + BLOCK_M])
     return dA
 
 
