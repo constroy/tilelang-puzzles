@@ -154,6 +154,9 @@ def tl_copy_1d_parallel(A, BLOCK_N: int):
     B = T.empty((N,), T.float16)
 
     # TODO: Implement this function
+    with T.Kernel(T.ceildiv(N, BLOCK_N), threads=256) as bx:
+        pos = bx * BLOCK_N
+        T.copy(A[pos:pos+BLOCK_N], B[pos:pos+BLOCK_N])
 
     return B
 
