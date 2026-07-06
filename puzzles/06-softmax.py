@@ -84,7 +84,32 @@ def tl_softmax(A, BLOCK_N: int, BLOCK_M: int):
     B = T.empty((N, M), dtype)
 
     # TODO: Implement this function
-
+    # online softmax
+    with T.Kernel(T.ceildiv(N, BLOCK_N), threads=256) as bx:
+        A_local = T.alloc_fragment((BLOCK_N, BLOCK_M), dtype)
+        max = T.alloc_fragment((BLOCK_N,), dtype)
+        T.fill(max, -T.infinity(dtype))
+        sum = T.alloc_fragment((BLOCK_N,), dtype)
+        T.clear(sum)
+        now = T.alloc_fragment((BLOCK_N,), dtype)
+        for k in T.serial(T.ceildiv(M, BLOCK_M)):
+            T.copy(A[bx * BLOCK_N, k * BLOCK_M], A_local)
+            T.reduce_max(A_local, now, clear=True)
+            for i in T.Parallel(BLOCK_N):
+                if max[i] < now[i]:
+                    sum[i] *= T.exp2(log2_e * (max[i] - now[i]))
+                    max[i] = now[i]
+            for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+                A_local[i, j] = T.exp2(log2_e * (A_local[i, j] - max[i]))
+            T.reduce_sum(A_local, sum, clear=False)
+        # calculate LSE
+        for i in T.Parallel(BLOCK_N):
+            sum[i] = T.log2(sum[i]) + log2_e * max[i]
+        for k in T.serial(T.ceildiv(M, BLOCK_M)):
+            T.copy(A[bx * BLOCK_N, k * BLOCK_M], A_local)
+            for i, j in T.Parallel(BLOCK_N, BLOCK_M):
+                A_local[i, j] = T.exp2(log2_e * A_local[i, j] - sum[i])
+            T.copy(A_local, B[bx * BLOCK_N, k * BLOCK_M])
     return B
 
 
@@ -98,6 +123,8 @@ def run_softmax():
         tl_softmax,
         ref_softmax,
         {"N": N, "M": M, "BLOCK_N": BLOCK_N, "BLOCK_M": BLOCK_M},
+        atol=1e-6,
+        rtol=1e-6,
     )
     bench_puzzle(
         tl_softmax,
